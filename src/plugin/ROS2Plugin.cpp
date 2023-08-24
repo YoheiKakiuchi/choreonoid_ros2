@@ -1,6 +1,7 @@
 #include "ROS2Plugin.hpp"
 #include "BodyROS2Item.h"
 #include "WorldROS2Item.h"
+#include "ScenePublisherItem.h"
 #include "deprecated/BodyPublisherItem.h"
 #include <cnoid/MessageView>
 
@@ -18,8 +19,11 @@ bool ROS2Plugin::initialize()
 {
     WorldROS2Item::initializeClass(this);
     BodyROS2Item::initializeClass(this);
+    ScenePublisherItem::initializeClass(this);
     BodyPublisherItem::initializeClass(this);
 
+    //
+    //
     return true;
 }
 
