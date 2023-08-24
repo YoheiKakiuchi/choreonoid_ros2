@@ -29,3 +29,6 @@ endif()
 add_subdirectory(src)
 
 ament_package()
+
+install(DIRECTORY launch
+        DESTINATION share/${PROJECT_NAME})
