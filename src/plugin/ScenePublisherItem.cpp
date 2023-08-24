@@ -9,15 +9,9 @@
 #include "ScenePublisherItem.h"
 #include "gettext.h"
 #include <cnoid/Archive>
-#include <cnoid/ConnectionSet>
 #include <cnoid/ItemManager>
 #include <cnoid/PutPropertyFunction>
-#include <cnoid/SimulationBar>
-#include <cnoid/SimulatorItem>
-#include <cnoid/WorldItem>
-// #include <ros/ros.h>
 #include <rclcpp/rclcpp.hpp>
-#include <rosgraph_msgs/msg/clock.hpp>
 
 using namespace std;
 using namespace cnoid;

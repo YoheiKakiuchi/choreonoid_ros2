@@ -20,7 +20,7 @@ bool ROS2Plugin::initialize()
     WorldROS2Item::initializeClass(this);
     BodyROS2Item::initializeClass(this);
     ScenePublisherItem::initializeClass(this);
-    BodyPublisherItem::initializeClass(this);
+    //BodyPublisherItem::initializeClass(this);
 
     //
     //

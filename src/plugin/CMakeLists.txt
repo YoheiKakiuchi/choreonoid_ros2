@@ -7,7 +7,7 @@ choreonoid_add_plugin(${target}
         WorldROS2Item.cpp
         BodyROS2Item.cpp
         ScenePublisherItem.cpp
-        deprecated/BodyPublisherItem.cpp
+        #deprecated/BodyPublisherItem.cpp
         ${mofiles}
   )
 
