@@ -10,12 +10,9 @@ choreonoid_add_plugin(${target}
         ${mofiles}
   )
 
-target_link_libraries(${target}
-  ${rclcpp_LIBRARIES}
-  ${std_msgs_LIBRARIES}
-  ${std_srvs_LIBRARIES}
-  ${sensor_msgs_LIBRARIES}
-  ${image_transport_LIBRARIES}
+ament_target_dependencies(${target} PUBLIC rclcpp std_msgs std_srvs sensor_msgs image_transport)
+
+target_link_libraries(${target} PUBLIC
   Choreonoid::CnoidBodyPlugin
   )
 
