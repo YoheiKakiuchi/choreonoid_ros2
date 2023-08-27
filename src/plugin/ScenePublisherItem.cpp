@@ -1,9 +1,5 @@
 /**
-   \note Alghough multiple instances of WorldROSItem can be created,
-   only one /clock topic can exist in a system. The current implementation
-   does not consider this limitation and the clock value may be inconsistent
-   when multiple WorldROSItem publish it simultaneously. The implementation
-   should be improved to avoid this problem.
+
 */
 
 #include "ScenePublisherItem.h"
@@ -11,7 +7,13 @@
 #include <cnoid/Archive>
 #include <cnoid/ItemManager>
 #include <cnoid/PutPropertyFunction>
+#include <cnoid/Timer>
+#include <cnoid/SceneView>
+#include <cnoid/SceneWidget>
+
 #include <rclcpp/rclcpp.hpp>
+#include <image_transport/image_transport.hpp>
+#include <iostream>
 
 using namespace std;
 using namespace cnoid;
@@ -23,8 +25,6 @@ class ScenePublisherItem::Impl : public rclcpp::Node
 public:
     ScenePublisherItem *self;
 
-    //    unique_ptr<ros::NodeHandle> rosNode;
-    //rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr clockPublisher;
     double publishingRate;
 
     Impl(ScenePublisherItem *self);
@@ -32,6 +32,23 @@ public:
     ~Impl();
 
     void initialize();
+
+    Timer tm;
+    image_transport::Publisher pub;
+    void publishImage() {
+        QImage im = SceneView::instance()->sceneWidget()->getImage();
+
+        sensor_msgs::msg::Image msg;
+        msg.height = im.height();
+        msg.width = im.width();
+        msg.encoding = "bgra8";
+        msg.step = msg.width * 4;
+        msg.data.resize(msg.height * msg.width * 4);
+        for (int i = 0; i < msg.height * msg.width * 4; i++) {
+            msg.data[i] = im.bits()[i];
+        }
+        pub.publish(msg);
+    }
 };
 
 }  // namespace cnoid
@@ -44,20 +61,27 @@ void ScenePublisherItem::initializeClass(ExtensionManager *ext)
 
 ScenePublisherItem::ScenePublisherItem()
 {
+    std::cerr << "ScenePublisherItem : created" << std::endl;
     impl = new Impl(this);
 }
 
 ScenePublisherItem::Impl::Impl(ScenePublisherItem *self)
     : rclcpp::Node("scene_publisher", rclcpp::NodeOptions())
-    , self(self)
+    , self(self),  tm()
 {
+    std::cerr << "Created Impl" << std::endl;
     publishingRate=30;
     initialize();
+    pub = image_transport::create_publisher(this, "scene/image");
+    tm.sigTimeout().connect(
+        [this]() { this->publishImage(); });
+    tm.start(33);
 }
 
 ScenePublisherItem::ScenePublisherItem(const ScenePublisherItem &org)
     : Item(org)
 {
+    std::cerr << "ScenePublisherItem : copied" << std::endl;
     impl = new Impl(this, *org.impl);
 }
 
@@ -65,6 +89,7 @@ ScenePublisherItem::Impl::Impl(ScenePublisherItem *self, const Impl &org)
     : rclcpp::Node("scene_publisher", rclcpp::NodeOptions())
     , self(self)
 {
+    std::cerr << "Copied Impl" << std::endl;
     publishingRate = org.publishingRate;
     initialize();
 }
