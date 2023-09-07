@@ -11,7 +11,7 @@ choreonoid_add_plugin(${target}
         ${mofiles}
   )
 
-ament_target_dependencies(${target} PUBLIC rclcpp std_msgs std_srvs sensor_msgs image_transport)
+ament_target_dependencies(${target} PUBLIC rclcpp std_msgs std_srvs sensor_msgs geometry_msgs image_transport)
 
 target_link_libraries(${target} PUBLIC
   Choreonoid::CnoidBodyPlugin
