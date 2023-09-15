@@ -16,6 +16,10 @@
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>image_transport</depend>
+  <depend>cv_bridge</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_eigen</depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>
