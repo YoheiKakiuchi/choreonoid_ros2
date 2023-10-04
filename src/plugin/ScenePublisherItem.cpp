@@ -24,12 +24,31 @@
 #include <cstring>
 
 #include <cnoid/SceneRenderer>
+#include <thread>
+#include <mutex>
 
 using namespace std;
 using namespace cnoid;
+using std::placeholders::_1;
+using std::placeholders::_2;
 
 namespace cnoid {
+struct ThreadInfo
+{
+    QImage left;
+    QImage right;
+    bool finished;
+    std::thread *thread;
+    int id;
+    ThreadInfo() : left(nullptr), right(nullptr), finished(false), thread(nullptr) {}
 
+    ~ThreadInfo() {
+        std::cerr << "dest(" << this << ")[" << finished << "] : " << id << std::endl;
+        if(!!thread) {
+            delete thread;
+        }
+    }
+};
 class ScenePublisherItem::Impl : public rclcpp::Node
 {
 public:
@@ -53,7 +72,8 @@ public:
     rclcpp::Clock ros_clock;
     Eigen::Isometry3d hmd_pos;
     double fov_;
-
+    std::mutex pub_mutex;
+    std::vector<ThreadInfo *>thread_list;
     int counter;
     void runCycle() {
         std::string toFrame = "world";
@@ -127,8 +147,12 @@ public:
             //    Matrix4 pj = sr->projectionMatrix();
             //    Matrix4 vpj = sr->viewProjectionMatrix();
             //}
+#if 0
             publishCamera(view_instances.at(1)->sceneWidget(),
                           view_instances.at(2)->sceneWidget());
+#endif
+            publishCameraThread(view_instances.at(1)->sceneWidget(),
+                                view_instances.at(2)->sceneWidget());
             counter++;
             return;
         }
@@ -213,7 +237,102 @@ public:
             params.emplace_back(9);
             cv_bridge::CvImageConstPtr cv_ptr = cv_bridge::toCvShare(msg, compressed);
             cv::imencode(".png", cv_ptr->image, compressed->data, params);
-            compress_pub->publish(*compressed);
+            {
+                std::lock_guard<std::mutex> lock(pub_mutex);
+                compress_pub->publish(*compressed);
+            }
+        }
+    }
+#define MAX_THREAD 15
+    void publishCameraThread(SceneWidget *left, SceneWidget *right) {
+        bool finished = false;
+        while(!finished) {
+            auto pos = thread_list.end();
+            for(auto it = thread_list.begin(); it != thread_list.end(); it++) {
+                {
+                    std::lock_guard<std::mutex> lock(pub_mutex);
+                    if((*it)->finished) {
+                        pos = it;
+                        break;
+                    }
+                }
+            }
+            if (pos == thread_list.end()) {
+                finished = true;
+            } else {
+                ThreadInfo *tgt = (*pos);
+                tgt->thread->join();
+                thread_list.erase(pos);
+                delete tgt;
+            }
+        }
+        if (thread_list.size() > MAX_THREAD) {
+            return;
+        }
+        //
+        ThreadInfo *h = new ThreadInfo();
+        h->left  =  left->getImage();
+        h->right = right->getImage();
+        //
+        if(h->left.height() != h->right.height()) {
+            return;
+        }
+        if(h->left.width() != h->right.width()) {
+            return;
+        }
+        //
+        h->thread = new std::thread(std::bind(&ScenePublisherItem::Impl::publish_, this, _1), h);
+        h->id = counter;
+        thread_list.push_back(h);
+    }
+#define NEW_WIDTH 1140
+#define NEW_HEIGHT 1148
+#define L_X_OFFSET 0
+#define R_X_OFFSET 140
+#define L_Y_OFFSET 46
+#define R_Y_OFFSET 46
+    void publish_(ThreadInfo *h)
+    {
+        h->left.convertTo(QImage::Format_RGB888);
+        h->right.convertTo(QImage::Format_RGB888);
+        cv::Mat new_cv_l;
+        cv::Mat new_cv_r;
+        {
+            cv::Mat cv_l(h->left.height(), h->left.width(), CV_8UC3, h->left.bits());
+            cv::Mat cv_r(h->right.height(), h->right.width(), CV_8UC3, h->right.bits());
+            cv::Rect roiL( L_X_OFFSET, L_Y_OFFSET, NEW_WIDTH, NEW_HEIGHT);
+            cv::Rect roiR( R_X_OFFSET, R_Y_OFFSET, NEW_WIDTH, NEW_HEIGHT);
+            cv::Mat(cv_l, roiL).copyTo(new_cv_l);
+            cv::Mat(cv_r, roiR).copyTo(new_cv_r);
+        }
+        sensor_msgs::msg::Image msg;
+        msg.width  = new_cv_l.cols;
+        msg.height = new_cv_l.rows + new_cv_r.rows;
+        msg.encoding = "rgb8";
+        msg.step = msg.width * 3;
+        msg.data.resize(msg.height * msg.width * 3);
+        std::memcpy(msg.data.data(), new_cv_l.ptr(), msg.step * new_cv_l.rows);
+        std::memcpy(msg.data.data()+(msg.step * new_cv_l.rows), new_cv_r.ptr(), msg.step * new_cv_r.rows);
+        //
+        rclcpp::Time now = ros_clock.now();
+        msg.header.stamp = now;
+        msg.header.frame_id = "cnoid";
+        {
+            std::shared_ptr<sensor_msgs::msg::CompressedImage> compressed(new sensor_msgs::msg::CompressedImage());
+            compressed->header = msg.header;
+            compressed->format = msg.encoding;
+            std::vector<int> params;
+            params.reserve(2);
+            params.emplace_back(cv::IMWRITE_PNG_COMPRESSION);
+            params.emplace_back(9);
+            cv_bridge::CvImageConstPtr cv_ptr = cv_bridge::toCvShare(msg, compressed);
+            cv::imencode(".png", cv_ptr->image, compressed->data, params);
+            {
+                std::lock_guard<std::mutex> lock(pub_mutex);
+                compress_pub->publish(*compressed);
+                h->finished = true;
+                std::cerr << "finish(" << h << ") : " << h->id << std::endl;
+            }
         }
     }
 };
