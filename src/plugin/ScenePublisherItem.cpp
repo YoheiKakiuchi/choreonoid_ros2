@@ -83,7 +83,7 @@ public:
             //std::cerr << "sceneWidget: 0/" << view_instances.at(1)->name();
             //std::cerr << ", 1/" << view_instances.at(2)->name() << std::endl;
             {// left scene
-                view_instances.at(1)->sceneWidget()->setScreenSize(1280, 1280);
+                //view_instances.at(1)->sceneWidget()->setScreenSize(1280, 1280);
                 view_instances.at(1)->sceneWidget()->builtinPerspectiveCamera()->setFieldOfView(fov_);
                 //view_instances.at(1)->sceneWidget()->builtinPerspectiveCamera()->notifyUpdate();
                 AngleAxis q( 0.0, Vector3::UnitY());
@@ -99,7 +99,7 @@ public:
                 view_instances.at(1)->sceneWidget()->builtinCameraTransform()->setPosition(cur);
             }
             {// right scene
-                view_instances.at(2)->sceneWidget()->setScreenSize(1280, 1280);
+                //view_instances.at(2)->sceneWidget()->setScreenSize(1280, 1280);
                 view_instances.at(2)->sceneWidget()->builtinPerspectiveCamera()->setFieldOfView(fov_);
                 //view_instances.at(2)->sceneWidget()->builtinPerspectiveCamera()->notifyUpdate();
                 AngleAxis q( 0.0, Vector3::UnitY());
@@ -114,21 +114,22 @@ public:
                 }
                 view_instances.at(2)->sceneWidget()->builtinCameraTransform()->setPosition(cur);
             }
+            //
             //view_instances.at(0)->sceneWidget()->setScreenSize(1280, 720);
-            view_instances.at(0)->sceneWidget()->builtinPerspectiveCamera()->setFieldOfView(fov_);
-            view_instances.at(0)->sceneWidget()->builtinCameraTransform()->setPosition(hmd_pos);
-            // notify only :OK
-            // render only :OK
-            view_instances.at(0)->sceneWidget()->renderScene(true);//
+            //view_instances.at(0)->sceneWidget()->builtinPerspectiveCamera()->setFieldOfView(fov_);
+            //view_instances.at(0)->sceneWidget()->builtinCameraTransform()->setPosition(hmd_pos);
+            //view_instances.at(0)->sceneWidget()->renderScene(true);//
+            // TODO:: render HMD, controllers
             view_instances.at(1)->sceneWidget()->renderScene(true);//
             view_instances.at(2)->sceneWidget()->renderScene(true);//
-            //{
-            //    SceneRenderer *sr = view_instances.at(1)->sceneWidget()->renderer();
-            //    Matrix4 pj = sr->projectionMatrix();
-            //    Matrix4 vpj = sr->viewProjectionMatrix();
-            //}
+#if 0 // Raw Image
             publishCamera(view_instances.at(1)->sceneWidget(),
                           view_instances.at(2)->sceneWidget());
+#endif
+#if 1 // Compressed Image
+            publishRawCamera(view_instances.at(1)->sceneWidget(),
+                             view_instances.at(2)->sceneWidget());
+#endif
             counter++;
             return;
         }
@@ -163,8 +164,10 @@ public:
         //std::cerr << "fmt: " << im_l.format() << std::endl;
         //std::cerr << "size: " << im_l.width() << "x" << im_l.height() << std::endl;
         //std::cerr << "bbl: " << im_l.bytesPerLine() << std::endl;
-        int nW=1140;
-        int nH=1148;
+        //int nW=1140;
+        //int nH=1148;
+        int nW=1700;
+        int nH=1708;
         //
         cv::Mat new_cv_l;
         cv::Mat new_cv_r;
@@ -216,6 +219,56 @@ public:
             compress_pub->publish(*compressed);
         }
     }
+    void publishRawCamera(SceneWidget *left, SceneWidget *right) {
+        QImage im_l =  left->getImage();
+        QImage im_r = right->getImage();
+
+        if(im_l.height() != im_r.height()) {
+            return;
+        }
+        if(im_l.width() != im_r.width()) {
+            return;
+        }
+        im_r.convertTo(QImage::Format_RGB888);
+        im_l.convertTo(QImage::Format_RGB888);
+        int nW=1140;
+        int nH=1148;
+        //
+        cv::Mat new_cv_l;
+        cv::Mat new_cv_r;
+        {
+            cv::Mat cv_l(im_l.height(), im_l.width(), CV_8UC3, im_l.bits());
+            cv::Mat cv_r(im_r.height(), im_r.width(), CV_8UC3, im_r.bits());
+            cv::Rect roiL(   0, 46, nW, nH);
+            cv::Rect roiR( 140, 46, nW, nH);
+            cv::Mat(cv_l, roiL).copyTo(new_cv_l);
+            cv::Mat(cv_r, roiR).copyTo(new_cv_r);
+        }
+        sensor_msgs::msg::Image msg;
+        msg.width  = new_cv_l.cols;
+        msg.height = new_cv_l.rows + new_cv_r.rows;
+        msg.encoding = "rgb8";
+        msg.step = msg.width * 3;
+        msg.data.resize(msg.height * msg.width * 3);
+        std::memcpy(msg.data.data(), new_cv_l.ptr(), msg.step * new_cv_l.rows);
+        std::memcpy(msg.data.data()+(msg.step * new_cv_l.rows), new_cv_r.ptr(), msg.step * new_cv_r.rows);
+
+        //
+        rclcpp::Time now = ros_clock.now();
+        msg.header.stamp = now;
+        msg.header.frame_id = "cnoid";
+        sensor_msgs::msg::CameraInfo info;
+        info.header.stamp = now;
+        info.header.frame_id = "cnoid";
+        // [TODO] add camera_info
+        //const double minLength = std::min(msg.width, msg.height/2);
+        const double focalLength = msg.width / 2.0 / tan(0.5*fov_);
+        //const double principalPointX = (info.width - 1.0) / 2.0;
+        //const double principalPointY = (info.height - 1.0) / 2.0;
+        info.k[0] = focalLength;
+        info.k[4] = focalLength;
+        pub_cam.publish(msg, info);
+    }
 };
 
 }  // namespace cnoid
@@ -238,7 +291,7 @@ ScenePublisherItem::Impl::Impl(ScenePublisherItem *self)
 {
     counter = 0;
     std::cerr << "Created Impl" << std::endl;
-    publishingRate=30;
+    publishingRate = 30.0;
 
     initialize();
 }
@@ -266,17 +319,24 @@ void ScenePublisherItem::Impl::initialize()
     //
     fov_ = 1.5504;
     //pub = image_transport::create_publisher(this, "scene/image");
-    //pub_cam = image_transport::create_camera_publisher(this, "scene_camera/images");
+    // raw
+    pub_cam = image_transport::create_camera_publisher(this, "scene_camera/images");
+    // compressed
     compress_pub = this->create_publisher<sensor_msgs::msg::CompressedImage>("scene_camera/compressed_images", 1);
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_, this);
 
     hmd_pos = Eigen::Isometry3d::Identity();
 
+    std::vector<SceneView *> view_instances = SceneView::instances();
+    if (view_instances.size() > 2) {
+      view_instances.at(1)->sceneWidget()->setScreenSize(1900, 1900);
+      view_instances.at(2)->sceneWidget()->setScreenSize(1900, 1900);
+    }
     tm.sigTimeout().connect( [this]() { this->runCycle(); });
-    //tm.start(33);
-    tm.start(67);
-    //tm.start(120);
+
+    int interval_ms = 1000/publishingRate;
+    tm.start(interval_ms);
 }
 
 ScenePublisherItem::~ScenePublisherItem()
